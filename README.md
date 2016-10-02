@@ -35,7 +35,9 @@ cp data/*.RData search/data/
 ## Running the example search interface.
 
 The example search interface can be run using the script "run_search.R".
-By default it will listen on localhost port 7660. 
+By default it will listen on localhost port 7660.  The image below illustrates the example interface and search results.
+
+![Example UI](https://github.com/cxd/text_svd/raw/master/images/search_example.png)
 
 ## Other Notes.
 
@@ -79,4 +81,8 @@ Documents are assigned the distance from the query, and then ordered for maximum
 
 Maybe, using an approach to select terms that correspond with the highest absolute coefficients in V it would be possible to generate a set of queries automatically for a selected top number of components in V (representing the largest variances in the diagonal S), then iteratively running the queries to calculate the proximities of each query per component against each document, the closest cosine distances then are used to label each document resulting in a group of documents clustered to each component. This way documents are labeled with their corresponding component.
 
-The script "cluster_documents.R" makes some attempt at the above method, and outputs a set of CSV files one of which is called "docs_clustered.csv" that labels documents pertaining to the clusters assigned by this method.
+The script "cluster_documents.R" makes some attempt at the above method, and outputs a set of CSV files one of which is called "docs_clustered.csv" that labels documents pertaining to the clusters assigned by this method. 
+
+The image below illustrates  the method where the first few terms from each cluster defining the queries are strung togethor and then coloured to form a word cloud to illustrate key terms within each cluster.
+![key terms](https://github.com/cxd/text_svd/raw/master/images/example_cluster_text.png)
+
