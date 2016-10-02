@@ -1,6 +1,6 @@
 #Text SVD
 
-This is an experiment with using an SVD and document term matrix to enable 
+This is an experiment with using an SVD of a document term matrix to enable 
 
 1. searching document examples by projecting a query term vector into the term space and using cosine similarity to rank results.
 2. potentially extend the method for document clustering, or to gain further insights into common themes based on strongly related terms.
