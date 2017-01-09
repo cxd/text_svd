@@ -40,7 +40,7 @@ entropy <- -1/log(length(S)) * sum(fK * log(fK))
 # find the first n components <= entropy
 comps <- c(fK[1])
 for(i in 2:length(fK)) {
-  if (sum(comps) > entropy) {
+  if (sum(comps) > entropy && length(comps) > 10) {
     break;
   }
   comps <- c(comps, fK[i])
@@ -153,8 +153,10 @@ maxUniqueTermIndexes <- function(V, unique_words, N) {
   df <- data.frame(matrix(unlist(result), nrow=N, byrow=TRUE))
   df
 }
-
-search_terms <- maxUniqueTermIndexes(ssV, unique_words, K)
+## maxTermIndexes appears to give better clusters than
+## the maxUniqueTermIndexes although it does allow
+## terms to be reused between clusters
+search_terms <- maxTermIndexes(ssV, unique_words, 25)
 
 M <- as.matrix(search_terms)
 # we want the total set of terms that appear in terms and we want the indices
@@ -176,7 +178,7 @@ heatmap(M2, Rowv=NA, Colv=NA,
           margins=c(5,5),
           main="term membership in component")
 
-pdf("test.pdf", width=22, height=20, pointsize=12)
+pdf("test.pdf", width=22, height=24, pointsize=12)
 heatmap(t(M2), Rowv=NA, Colv=NA, 
         labRow=labels,
         trace="none",
@@ -216,6 +218,7 @@ searchResults <- function(search_space, search_term_mat, select_data_cols) {
   result <- cbind(docs, df)
   result
 }
+search_terms <- maxTermIndexes(ssV, unique_words, K)
 
 search_results <- searchResults(search_space, search_terms, c("item_key", "text")) 
 
@@ -238,26 +241,29 @@ docs$cluster <- cluster
 
 hist(cluster, breaks=K, main="population document clusters")
 
-plot(U[1,],U[2,],col=(cluster))
+temp <- data.frame(dim1=U[1,], dim2=U[2,], dim3=U[3,], col=cluster)
+ggplot(temp) + 
+  geom_point(aes(x=dim1, y=dim3, col=as.factor(cluster)), shape=1)
 
 V2 <- t(V)
+temp2 <- data.frame(dim1=V[1,], dim2=V[2,], dim3=V[3,], col=cluster)
+ggplot(temp2) + 
+  geom_point(aes(x=dim1, y=dim2, col=as.factor(cluster)), shape=1)
 
-plot(V2[2,], V2[1,], col=(cluster))
+plot(V[1,], V[2,], col=(cluster))
 
 
 require(scatterplot3d)
 # the scatter plot shows some interesting directions along components 1 2 and 4.
 
 
-scatterplot3d(U[1,],U[2,], U[3,], color=as.numeric(cluster))
+scatterplot3d(U[1,], U[2,], U[3,], color=as.numeric(cluster))
 
 docs_grouped <- docs[order(docs$cluster),]
 
 write.csv(docs_grouped, file="data/docs_clustered.csv", row.names=FALSE)
 
 terms_data <-  data.frame(matrix(unlist(terms), nrow=length(terms), byrow=TRUE))
-
-
 
 counts <- count(docs_grouped, c(cluster))
 colnames(counts) <- c("cluster", "count")

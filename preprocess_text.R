@@ -32,6 +32,7 @@ preprocess_line <- function(line) {
 # lines list is a list of lists, same number of rows as data, each list represents the
 # list of terms extracted from the original document
 # the output matrix is a document term matrix, were the terms are counted for each appearance in the document.
+# the term weights that result are the tfidf for each term and document.
 # the matrix is n documents x m total unique words.
 # this routine is fairly slow, extracting the term counts needs some work.
 convert_to_matrix <- function(data, id_cols, lines_list) {
@@ -54,8 +55,33 @@ convert_to_matrix <- function(data, id_cols, lines_list) {
     data.frame(t(unlist(cols)))
   })
   M <- t(rows)
+  # count the number of documents containing each unique word.
+  cnts <- sapply(1:length(unique_words), function(j) {
+    col <- M[,j]
+    cnt <- length(col[col > 0])
+    if (cnt ==  0) {
+      cnt <- 1
+    } 
+    cnt
+  })
+  idf <- log(nrow(M)/cnts)
+  
+  # now compute the tfidf for each row in M
+  rows2 <- sapply(1:nrow(M), function(i) {
+    row <- unlist(M[i,])
+    mx <- max(row)
+    if (mx == 0) {
+      mx <- 1
+    }
+    row2 <- 0.5 + 0.5*(row/mx)
+    # piecewise multiply against the IDF
+    tfidf <- row2*idf
+    data.frame(tfidf)
+  })
+  M2 <- t(data.frame(rows2))
+  
   df <- data.frame(data[,id_cols])
-  df <- cbind(df, M)
+  df <- cbind(df, M2)
   colnames(df) <- c(id_cols, unique_words)
   df
 }
