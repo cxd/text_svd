@@ -36,9 +36,11 @@ shinyServer(function (input, output, session) {
       query <- queryInput()
       max <- maxResults()
       filter <- selectedFilter()
-      threshold <- 0.10
+      threshold <- searchThreshold
       outputBase <- "data/"
-      dataSet <- search_text(query, c("item_key", "text"), outputBase, filter)
+      dataSet <- search_text_preloaded(data, unique_words, searchA, query, c("item_key", "text"), outputBase, filter)
+      print("results")
+      print(nrow(dataSet))
       dataSet <- dataSet[dataSet$cosine_dist >= threshold, ]
       if (nrow(dataSet) > max) {
         dataSet[1:max,]
