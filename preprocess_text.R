@@ -1,6 +1,6 @@
-require(deployrUtils)
+#require(deployrUtils)
 
-deployrPackage("stringr")
+require(stringr)
 
 skip_list <- read.csv("input/skip_list.csv", header=FALSE)
 

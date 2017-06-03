@@ -1,0 +1,97 @@
+---
+title: "Text SVD"
+output: html_notebook
+---
+
+Exploration of text data extracted from apache defects.
+
+The following uses the method prepare_document_model in order to extract terms, calculate tfidf and generate document vectors from the input corpus. The process then performs an SVD on the generated matrix.
+
+The document term matrix X is then decomposed
+$$
+X = USV'
+$$
+
+- U represents relation of rows
+
+- S represents square root of eigenvalues
+
+- V' represents relation of attributes
+  
+
+
+```{r, message=FALSE, error=FALSE, warning=FALSE}
+require(dplyr)
+source("preprocess_text.R")
+source("prepare_svd_document_model.R")
+source("svd_search.R")
+
+file <- "input/input_data.csv"
+
+data_cols <- c("project_id", "item_key", "text")
+id_cols <- c("project_id", "item_key")
+
+prepare_document_model(file, data_cols, id_cols, "data/notes/")
+
+```
+
+After generating the model and saving it to the file system it is read back into the search space, which consists of the SVD.
+
+```{r}
+outputBase <- "data/notes/"  
+data <- load_document_data(outputBase)
+  unique_words <- load_unique_words(outputBase)
+  searchA <- load_search_space(outputBase)
+  
+  searchU <- searchA$u
+  searchS <- searchA$d
+  # transposed relation of attributes to objects rows equal the attributes
+  searchV <- searchA$v
+  
+```
+
+Given that the model is based on an SVD we can review the eigenvalues and determine the percentage of total variance explained.
+
+Note however the number of rows (documents) is less than the number of columns (terms) this can lead to some instability in the decomposition. 
+
+```{r}
+total <- sum(searchS^2)
+eigenV <- searchS^2
+
+plot(eigenV, type="b")
+
+plot(eigenV/total, type="b")
+
+```
+
+The first component explains close to 100% of all variation, the second components are plotted as follows.
+
+```{r}
+
+plot(eigenV[2:100], type="b")
+
+plot(eigenV[2:100]/total, type="b")
+```
+
+The terms can be visualised by projecting them into the ordination formed by the term vectors.
+
+```{r fig.width=10, fig.height=10}
+plot(searchV[,2], searchV[,3], type="n")
+text(searchV[,2], searchV[,3], labels=unique_words, cex=0.6)
+```
+
+And rotating around the axis
+
+```{r fig.width=10, fig.height=10}
+plot(searchV[,3], searchV[,5], type="n")
+text(searchV[,3], searchV[,5], labels=unique_words, cex=0.6)
+```
+
+We can also review the matrix in terms of the distance between the ordination, given that the original document matrix can be projected into the vector space in order to form the components.
+
+```{r}
+docTerms <- load_document_term_mat(outputBase)
+X <- as.matrix(docTerms[,3:ncol(docTerms)])
+Z <- t(X)%*%searchU
+
+```
