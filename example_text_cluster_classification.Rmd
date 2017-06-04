@@ -388,7 +388,7 @@ And choosing a cluster with a high enough count to inspect.
 ```{r}
 
 temp <- data[order(data$cluster),]
-temp[temp$cluster == 14,]
+data.frame(transcription=temp[temp$cluster == 14,]$transcription)
 ```
 
 
@@ -398,7 +398,7 @@ Inspecting the next largest cluster.
 
 ```{r}
 temp <- data[order(data$cluster),]
-temp[temp$cluster == 36,]
+data.frame(transcription=temp[temp$cluster == 36,]$transcription)
 ```
 
 Seems to be related to enquiries, seems to be around reporting earnings, speaking to an operator, enquiring about claims status, rejection of claims and cancellations.
