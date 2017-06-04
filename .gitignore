@@ -3,3 +3,6 @@
 .RData
 data/*.RData
 search/data/*.RData
+data/notes/*.RData
+data/csexample/*.RData
+input/csexample/*.csv

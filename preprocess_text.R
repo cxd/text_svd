@@ -65,6 +65,7 @@ convert_to_matrix <- function(data, id_cols, lines_list) {
     cnt
   })
   idf <- log(nrow(M)/cnts)
+  term_counts <- data.frame(words=unique_words, count=cnts, idf=idf)
   
   # now compute the tfidf for each row in M
   rows2 <- sapply(1:nrow(M), function(i) {
@@ -83,7 +84,13 @@ convert_to_matrix <- function(data, id_cols, lines_list) {
   df <- data.frame(data[,id_cols])
   df <- cbind(df, M2)
   colnames(df) <- c(id_cols, unique_words)
-  df
+
+  results <- list(
+    terms = term_counts,
+    doc_mat = df
+  )
+  class(results) <- append(class(results), "convertMat")
+  return(results)
 }
 
 convert_terms_to_matrix <- function(terms, unique_words) {

@@ -1,0 +1,48 @@
+---
+title: "Example Text Classification"
+author: "Chris Davey"
+date: '04-06-2017'
+output: html_notebook
+---
+This document continues the process started in the example clustering notebook. We reload the data and generate the search space for documents and assign labels and clusters so that it is possible to generate a classifier.
+
+
+```{r}
+data <- load_document_data(outputBase)
+doc_mat <- load_document_term_mat(outputBase)
+  unique_words <- load_unique_words(outputBase)
+  searchA <- load_search_space(outputBase)
+  
+  searchU <- searchA$u
+  searchS <- searchA$d
+  # transposed relation of attributes to objects rows equal the attributes
+  searchV <- searchA$v
+
+cnts <- count(data, group_by=factor(app_tag))
+k <- nrow(cnts)
+Us <- searchU%*%Ss
+clust <- kmeans(Us, k)
+length(clust$cluster)
+
+dataSet <- data.frame(Us)
+dataSet$rowId <- data$row
+dataSet$appTag <- data$app_tag
+dataSet$cluster <- data$cluster
+
+dim(dataSet)
+
+require(caret)
+require(MASS)
+set.seed(101)
+inTrain <- createDataPartition(y=dataSet$appTag, p=0.75,list=FALSE)
+dsTrain <- dataSet[inTrain,]
+dsTest <- dataSet[-inTrain,]
+
+inTrain2 <- createDataPartition(y=factor(dataSet$cluster), p=0.75,list=FALSE)
+dsTrain2 <- dataSet[inTrain2,]
+dsTest2 <- dataSet[-inTrain2,]
+
+lda1 <- lda(as.matrix(dsTrain[,1:ncol(Us)]), grouping=dsTrain$appTag)
+test1 <- predict(ds)
+```
+

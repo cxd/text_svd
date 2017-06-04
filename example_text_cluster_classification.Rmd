@@ -1,0 +1,366 @@
+---
+title: "Example Text Ordination, Clustering and Classification"
+author: "Chris Davey"
+date: '04-06-2017'
+output: html_notebook
+---
+
+## Introduction
+
+This document provides a demonstration of conversion of text into a document matrix, and the application of a
+number of techniques on the resulting matrix.
+
+
+__Reading the raw data__
+
+In this example the data has the csv format with headings
+
+- row
+  - a row id
+  
+- transcription
+  - the text transcription for a given utterance
+  
+- occurrence
+  - the number of occurances of the utterance
+  
+- do
+  - a verb associated with the utterance.
+  
+- what
+  - a noun associated with the utterance
+  
+- sem_tag
+  - a hand labelled semantic tag applied to the utterance.
+  
+- app_tag
+  - a hand labelled tag that is associated with the utterance.
+  
+  
+In reading the data we will associate the row id, and will retain the app_tag.
+The transcription will be converted into a tf-idf matrix using a simple tokenisation. The tf-idf is calculated largely from the components of 
+
+__Term Frequency__
+
+$$
+tf(t,d) = 0.5 + 0.5\times\frac{f_{t,d}}{max(f_{t',d}:t'\in d)}
+$$
+For term $t$ in given document $d$ to produce frequency for the document $f_{t,d}$.
+
+__Inverse Document Frequency__
+$$
+idf(t,D) = \log\left( \frac{N}{|d \in D: t \in d|}\right)
+$$
+
+with $N$ being the total number of documents, that contain each term $t$.
+
+__Term Frequency Inverse Document Frequency__
+
+$$
+tfidf(t,d) = tf(t,d)\times idf(t,D)
+$$
+
+The TF-IDF matrix is then used as the input to the procedure.
+
+```{r, message=FALSE, error=FALSE, warning=FALSE}
+require(dplyr)
+source("preprocess_text.R")
+source("prepare_svd_document_model.R")
+source("svd_search.R")
+
+file <- "input/csexample/tagging_data.csv"
+outputBase <- "data/csexample/"  
+
+data_cols <- c("row", "transcription", "occurrence", "do", "what", "sem_tag", "app_tag")
+id_cols <- c("row")
+
+# note this is used to generate the document term matrix from scratch and is commented out
+# for subsequent runs after initially used to build the document term matrix.
+#prepare_document_model(file, data_cols, id_cols, outputBase, text_col="transcription")
+
+```
+
+After generating the original model we read it back in and use it to explore the data.
+
+```{r}
+data <- load_document_data(outputBase)
+doc_mat <- load_document_term_mat(outputBase)
+  unique_words <- load_unique_words(outputBase)
+  searchA <- load_search_space(outputBase)
+  
+  searchU <- searchA$u
+  searchS <- searchA$d
+  # transposed relation of attributes to objects rows equal the attributes
+  searchV <- searchA$v
+
+```
+
+The system that is generated is a matrix decomposition produced by an SVD. This is described as a decomposition of the $m \times n$ document-term matrix $A$ such that
+
+$$
+A = USV'
+$$
+
+Where
+
+- $U$ will be a matrix of the dimension $m \times k$ representing the eigenvectors for the rows of the matrix $A$
+
+- $S$ will be a vector of dimension $k$ representing the eigenvalues for matrix $A$.
+
+- $V'$ is the matrix of dimension $k \times n$ representing the eivenvectors of the columns of the matrix $A$.
+
+The total variation explained by each component of the decomposition can be determined by interpreting $S$ as the standard deviation and squaring it to determine the variance, the proportion of variance can be defined as
+
+$$
+f_k = \frac{s_{k}^2}{\sum_{i=1}^r s_i^2}
+$$
+
+A scree plot can be used to visualise the contribution of the components.
+
+```{r}
+total <- sum(searchS^2)
+eigenV <- searchS^2
+
+plot(eigenV, type="b")
+
+plot(eigenV/total, type="b")
+
+
+```
+
+
+The first component explains close to 100% of all variation, the corresponding eigenvectors can be considered as being a linear combination of all terms, note that due to the high amount of variation explained, it is difficult to determine the contribution of the other components from the second component onwards. 
+
+We can either estimate this as a proportion of the remaining fraction or plot the proportion of the total variation.
+
+The second components onwards are plotted as follows.
+
+```{r}
+
+plot(eigenV[2:100], type="b")
+
+plot(eigenV[2:100]/total, type="b")
+```
+If we were looking for the technique to yield a high amount of compression this suggests that there is little more than the first few linear combinations would be required from the projection of $AU$ or $AV'$ to effectively summarise the data, and in fact we will use this compression technique later on during classification.
+
+Note also that the scree plot does not show the total number of components as the remainder become increasingly small, and therefore insignificant.
+
+The total dimensions of the raw term document matrix is as follows:
+
+```{r}
+dim(doc_mat)
+```
+That is we have a relatively small vocabulary in this data set, there are only 1607 terms, however we have just over 11 thousand utterances in total.
+
+We can visualise the term vector space as an ordination using the projection of the terms into the vector space and then rendering the first two components. We will use the vector space scaled by the square root of each singular value which is the search space that is used when projecting term vectors into the term space, note that a similar search space is used when performing queries against the term matrix. The search space is formed by the diagonal matrix $S_s = IS^{1/2}$ and the product of the search space for the terms $V_s = VS_s$.
+
+```{r}
+n <- length(searchS)
+temp <- rep(0, n*n)
+Ss <- matrix(temp, nrow=n, ncol=n)
+diag(Ss) <- sqrt(searchS)
+
+Vp <- as.matrix(searchV)
+Vs <- Vp%*%Ss
+x <- Vs[,1]
+y <- Vs[,2]
+#y <- jitter(Vp[,2], factor=1, amount=max(y)-min(y))
+plot(x, y, type="n")
+text(x, y, labels=unique_words, cex=0.6)
+```
+
+
+Note the axes on the first dimension is relatively close, rotating about the other axis provides additional view of the data (often known as a grand tour).
+
+```{r, fig.width=10,fig.height=10}
+par.old <- par(mfrow=c(2,2))
+x <- Vs[,2]
+for(i in 3:6) {
+  y <- Vs[,i]
+  plot(x, y, type="n")
+  text(x, y, labels=unique_words, cex=0.6)
+}
+
+par(par.old)
+```
+
+Note we can explore the space of one projection to examine the terms that are located in the ordination. Given that the area between -0.1 and 0.1 is quite dense it is possible to explore this further. However interactive graphics of course would allow much more detailed exploration of the terms in the vector space.
+
+Hence we can investigate the use of the library "scatterD3" to support the visualisation.
+
+```{r, message=FALSE, error=FALSE, warning=FALSE}
+require(scatterD3)
+plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
+```
+
+While the resulting ordination is tightly clustered around the center, those terms around the perimeter do provide some indication as to topics that are identifiable outside of the central cluster. 
+
+In this visualisation we note that the axis have opposing directions for "claimable" and "reported" for example.
+
+We can also investigate a multidimensional scaling technique focusing only on the terms rather than documents using a euclidean distance between terms in the projection if we consider the matrix $V'$ to represent the relationship between terms we then make use of the vectors of each row of the matrix to calculate pairwise distances between each object (or term).
+
+
+The MDS method will generate an approximate distance matrix in less dimensions using an iterative approach.
+We will first generate a metric MDS (which should yield results similar to the eigendecomposition) and then we will use a non-metric approach.
+
+For example, we first examine the metric MDS and applying the distance on the transpose of the document term matrix rather than the term dimensions.
+
+```{r}
+T <- t(doc_mat[,2:ncol(doc_mat)])
+Tdist <- dist(T, method="euclidean")
+Tmds <- cmdscale(Tdist, k=3, eig=TRUE)
+Tmds$GOF
+```
+
+And plot the resulting ordination:
+
+```{r}
+x <- Tmds$points[,1]
+y <- Tmds$points[,2]
+y2 <- Tmds$points[,3]
+
+plotData <- data.frame(x=x, y=y, y2=y2, labels=unique_words[1:length(x)])
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
+
+```
+
+The resulting ordination is still quite dense and note that it is very similar to the components produced form the SVD, this is because the metric MDS makes use of an eigenvalue solution to determine the best fit approximation for the distance matrix. Hence the first 2 dimensions visualised are very similar to those generated from the SVD. We can also revisit the 2nd and third dimensions.
+
+```{r}
+scatterD3(plotData, x=y, y=y2, lab=labels, point_opacity=0)
+```
+
+This ordination at the default zoom contains the following quadrants.
+
+- upper left "youth", "allowance", "claim"
+
+- lower left "change", "report", "appointment", "payment".
+
+- upper right, "apply", "application" and "low", "income" and "health" "care" and "health" "card"
+
+- lower right appears to be clear of terms in the ordination.
+
+We can also experiment with the nonmetric MDS which approximates the original distance matrix by relative ranking rather than by eigenvalue solutions.
+
+
+
+```{r}
+require(vegan)
+Tmds2 <- monoMDS(Tdist, k=2)
+x <- Tmds2$points[,1]
+y <- Tmds2$points[,2]
+
+plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
+
+```
+
+The projection of terms appears to be much less similar to the metric MDS and the SVD. The method approximates the order of distances only. For the purposes of the analysis, the components resulting from the SVD and metric MDS will be used.
+
+__Term Frequency__
+
+It would be useful to make use of additional metrics in order to assist with the visualisation of terms, to do this we can make use of some kind of weighting for the term. A simplistic measure such as the inverse document frequency may be used to weight individual terms, this weighting can be used to alter the size of the terms.
+
+```{r}
+term_freq <- load_term_counts(outputBase)
+temp1 <- term_freq[order(-term_freq$count),]
+
+```
+
+Applying the count to the ordination.
+
+```{r}
+x <- Tmds$points[,2]
+y <- Tmds$points[,3]
+
+plotData <- data.frame(x=x, y=y, y2=y2, labels=unique_words[1:length(x)],
+                       size=term_freq$count[1:length(x)])
+
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, size_var=size)
+
+```
+
+__Clustering__
+
+Clustering methods can be performed to visualise potential groups of terms and additionally utterances.
+
+Terms can be clustered using either the distance matrix or the search space $V_s$ from the SVD, the agglomerative clustering method can be used to visualise the term clustering using a dendogram, and generate cuts based on a desired estimate of distance between groups.
+
+First we investigate the clusters based on the distance matrix for the terms.
+
+```{r, fig.width=20, fig.height=10}
+hc1 <- hclust(Tdist, method="centroid")
+plot(hc1, hang=-1, cex=0.3)
+```
+It is difficult to interpret the dendogram without saving the output to PDF and zooming into the terms, however visually we can intuitively select the number of appropriate clusters, the areas where the lines are high and densely packed can be used as a subjective guideline to determining the appropriate number. Based on the diagram we can select approximately 20 clusters for exploration. 
+
+```{r}
+cuts <- cutree(hc1, k=20)
+hist(cuts, breaks=20)
+x <- Tmds$points[,1]
+y <- Tmds$points[,2]
+y2 <- Tmds$points[,3]
+
+plotData <- data.frame(x=x, y=y, y2=y2, labels=unique_words[1:length(x)], cluster=factor(cuts[1:length(x)]),
+                       size=term_freq$count[1:length(x)])
+
+scatterD3(plotData, x=y, y=y2, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0,
+          size_var=size)
+
+
+
+```
+
+From the histogram of the cuts we can see the larger populations are within the first few clusters.
+
+It is also possible to explore the use of the clustering method on the search space $V_s$, the issue however is that the Vs matrix contains both positive and negative values. It is preferable to normalise the Vs matrix within a value of 0 and 1 instead.
+
+
+
+
+```{r, fig.width=20, fig.height=10}
+D <- t(apply(Vs, 1, function(x)(x-min(x))/(max(x)-min(x))))
+Ds <- as.dist(D)
+hc2 <- hclust(Ds, method="centroid")
+plot(hc2, hang=-1, cex=0.3)
+```
+
+The resulting dendogram is much harder to separate, we can attempt to use the intuition from the previous clustering in order to choose approximately 20 clusters and plot the search space.
+
+```{r}
+cuts2 <- cutree(hc2, k=20)
+hist(cuts2, breaks=20)
+plotData <- data.frame(x=Vs[,2], y=Vs[,3],labels=unique_words[1:length(Vs[,2])], cluster=cuts2[1:length(Vs[,2])], size=term_freq$count[1:length(Vs[,2])])
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0
+          ,size_var=size)
+```
+
+From the histogram of the cuts we can see this method does not produce good separation of clusters at all. We can instead investigate the kmeans method of clustering.
+
+```{r}
+k <- kmeans(Vs, 20)
+plotData <- data.frame(x=Vs[,1], y=Vs[,2],labels=unique_words[1:length(Vs[,2])], cluster=k$cluster, size=term_freq$count[1:length(Vs[,2])])
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, 
+          legend_width=0, size_var=size)
+
+```
+
+Similarly we may be able to review the clusters for documents instead of terms. The document matrix may be more divisible due to the separation based on tags. We plot the document search space and the identifiers for each document.
+
+```{r}
+cnts <- count(data, group_by=factor(app_tag))
+k <- nrow(cnts)
+Us <- searchU%*%Ss
+clust <- kmeans(Us, k)
+plotData <- data.frame(x=Us[,2], y=Us[,3], labels=doc_mat[,1], cluster=clust$cluster)
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0, legend_width=0, col_var=cluster)
+```
+The above plot suggests that there may be some separability based on clustering the decomposition of documents. Applying the same data but using the app_tag as a label produces a different representation.
+
+```{r}
+plotData <- data.frame(x=Us[,2], y=Us[,3], labels=doc_mat[,1], cluster=clust$cluster, tag=data$app_tag)
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0, legend_width=0, col_var=tag)
+
+```
+The coloration produced by app tags is visually much less segments in the data, this suggests that the manually assigned labels are much more artificial than those clusters arising from the document ordination. It is possible to test this by attempting to fit classifiers to the document set. Training separate classifiers to label first by app tag and second by cluster. 

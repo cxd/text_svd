@@ -5,19 +5,24 @@ require(ggplot2)
 require(dplyr)
 source("preprocess_text.R")
 
-prepare_document_model <- function(inputCsv, data_cols, id_cols, outputBase) {
+prepare_document_model <- function(inputCsv, data_cols, id_cols, outputBase, text_col="text") {
   data <- read.csv(inputCsv, header=TRUE)
   colnames(data) <- data_cols
   # convert all text into lines.
-  lines <- sapply(data$text, preprocess_line)
+  lines <- sapply(data[,text_col], preprocess_line)
   
-  doc_term_mat <- convert_to_matrix(data, id_cols, lines)
+  results <- convert_to_matrix(data, id_cols, lines)
+  term_counts <- results$terms
+  doc_term_mat <- results$doc_mat
+  
+  startIdx <- length(id_cols)
+  
   # get SVD of term document matrix
   # A = USV'
   # U represents relation of rows
   # V' represents relation of attributes
   # S represents square root of eigenvalues
-  X <- data.matrix(doc_term_mat[,3:ncol(doc_term_mat)])
+  X <- data.matrix(doc_term_mat[,startIdx:ncol(doc_term_mat)])
   
   lines_list <- lines
   words <- unlist(lines_list)
@@ -29,6 +34,11 @@ prepare_document_model <- function(inputCsv, data_cols, id_cols, outputBase) {
   saveRDS(unique_words, file=paste(outputBase, "unique_words.RData", sep=""))
   saveRDS(searchSpace, file=paste(outputBase, "search_space.RData", sep=""))
   saveRDS(doc_term_mat, file=paste(outputBase, "document_term_mat.RData", sep=""))
+  saveRDS(term_counts, file=paste(outputBase, "term_counts.RData", sep=""))
+}
+
+load_term_counts <- function(outputBase) {
+  readRDS(paste(outputBase, "term_counts.RData", sep=""))
 }
 
 load_document_data <- function(outputBase) {
