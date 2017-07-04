@@ -196,10 +196,9 @@ temp <- rep(0, n*n)
 Ss <- matrix(temp, nrow=n, ncol=n)
 diag(Ss) <- sqrt(searchS)
 
-Vp <- as.matrix(searchV)
-Vs <- Vp%*%Ss
-# dimension n terms x n terms
-dim(Vs)
+Vp <- (as.matrix(searchV))
+Vs <- (Vp%*%Ss)
+
 x <- Vs[,1]
 y <- Vs[,2]
 
@@ -235,12 +234,12 @@ par(par.old)
 
 Note we can explore the space of one projection to examine the terms that are located in the ordination. Given that the area between -0.1 and 0.1 is quite dense it is possible to explore this further. However interactive graphics of course would allow much more detailed exploration of the terms in the vector space.
 
-Hence we can investigate the use of the library "scatterD3" to support the visualisation.
+Hence we can investigate the use of the library "scatterD3" to support the visualisation. Here we are using the 60th dimension for "allowance" and the 88th dimension for "apply". The visualisation that is produced visualises the terms in relation to the axes formed in the search space by the terms "allowance" and "apply".
 
 ```{r, message=FALSE, error=FALSE, warning=FALSE}
 require(scatterD3)
-x <- Zv[,2]
-y <- Zv[,6]
+x <- Vs[,60]
+y <- Vs[,88]
 plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
 ```
@@ -278,7 +277,7 @@ Tmds <- cmdscale(Tdist, k=3, eig=TRUE)
 Tmds$GOF
 ```
 
-And plot the resulting ordination:
+And plot the resulting ordination, in this case, we have generated an MDS for 3 dimensions, which is a reduction in scale, and the visualisation is able to present the terms along either of the 3 dimensions.
 
 ```{r}
 x <- Tmds$points[,1]
@@ -396,25 +395,27 @@ hc2 <- hclust(Ds, method="centroid")
 plot(hc2, hang=-1, cex=0.3)
 ```
 
-The resulting dendogram is much harder to separate, we can attempt to use the intuition from the previous clustering in order to choose approximately 20 clusters and plot the search space.
+The resulting dendogram is much harder to separate, we can attempt to use the intuition from the previous clustering in order to choose approximately 20 clusters and plot the search space. This is visualised in the 3rd and 4th dimensions of the search space.
 
 ```{r}
 cuts2 <- cutree(hc2, k=20)
 hist(cuts2, breaks=20)
-plotData <- data.frame(x=Vp[,1], y=Vp[,2],labels=unique_words[1:length(Vs[,2])], cluster=cuts2[1:length(Vs[,2])], size=term_freq$count[1:length(Vs[,2])])
+plotData <- data.frame(x=Vs[,3], y=Vs[,4],labels=unique_words[1:length(Vs[,2])], cluster=cuts2[1:length(Vs[,2])], size=term_freq$count[1:length(Vs[,2])])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0
           ,size_var=size)
 ```
 
-From the histogram of the cuts we can see this method does not produce good separation of clusters at all. We can instead investigate the kmeans method of clustering.
+From the histogram of the cuts we can see this method does not produce good separation of clusters as the MDS method. We can instead investigate the kmeans method of clustering first estimating a division of roughly 20 clusters.
 
 ```{r}
 k <- kmeans(Vs, 20)
-plotData <- data.frame(x=Vs[,1], y=Vs[,2],labels=unique_words[1:length(Vs[,2])], cluster=k$cluster, size=term_freq$count[1:length(Vs[,2])])
+plotData <- data.frame(x=Vs[,3], y=Vs[,4],labels=unique_words[1:length(Vs[,2])], cluster=k$cluster, size=term_freq$count[1:length(Vs[,2])])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, 
           legend_width=0, size_var=size)
 
 ```
+
+This gives some separation that is more apparent when zooming into the clusters the coloration gives some details as to the separation between groups of terms.
 
 Similarly we may be able to review the clusters for documents instead of terms. The document matrix may be more divisible due to the separation based on tags. We plot the document search space and the identifiers for each document.
 
@@ -426,7 +427,7 @@ clust <- kmeans(Us, k)
 plotData <- data.frame(x=Us[,2], y=Us[,3], labels=doc_mat[,1], cluster=clust$cluster)
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0, legend_width=0, col_var=cluster)
 ```
-The above plot suggests that there may be some separability based on clustering the decomposition of documents. Applying the same data but using the app_tag as a label produces a different representation.
+The above plot suggests that there may be some separability based on clustering the decomposition of documents. Although does not indicate which is common amongst the documents. Applying the same data but using the app_tag as a label produces a different representation.
 
 ```{r}
 plotData <- data.frame(x=Us[,2], y=Us[,3], labels=doc_mat[,1], cluster=clust$cluster, tag=data$app_tag)
@@ -434,3 +435,51 @@ scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0, legend_width=0, col_v
 
 ```
 The coloration produced by app tags is visually much less segments in the data, this suggests that the manually assigned labels are much more artificial than those clusters arising from the document ordination. It is possible to test this by attempting to fit classifiers to the document set. Training separate classifiers to label first by app tag and second by cluster. 
+
+The next experiment will perform a comparison in training classifiers first on the app_tag, and secondly on clusters generated for the documents. This comparison will then consider the differences in the segmentation of the data.
+The difficulty of using clusters for classification is in the process of labelling the clusters. In order to do so, further manual inspection of each of the documents in each cluster is required.
+For example, inspecting the counts in each cluster.
+
+```{r}
+data$cluster <- clust$cluster
+cnts <- count(data, group_by=cluster)
+cnts[order(-cnts$n),]
+hist(cnts$n, breaks=nrow(cnts))
+
+
+```
+
+And choosing a cluster with a high enough count to inspect.
+
+```{r}
+
+temp <- data[order(data$cluster),]
+data.frame(transcription=temp[temp$cluster == 14,]$transcription)
+```
+
+
+Suggests this particular cluster is concerned with youth allowance payments, changing circumstances, changes to appointments and health care cards.
+
+Inspecting the next largest cluster.
+
+```{r}
+temp <- data[order(data$cluster),]
+data.frame(transcription=temp[temp$cluster == 36,]$transcription)
+```
+
+Seems to be related to enquiries, seems to be around reporting earnings, speaking to an operator, enquiring about claims status, rejection of claims and cancellations.
+
+Given the number of small sized clusters it may be useful to recluster the documents at approximately 34 clusters rather than the full 103 (103 from the number of original tags).
+
+```{r}
+idx <- which(cnts$n >= 100)
+smallCnt <- cnts[-idx,]
+nrow(smallCnt)
+nrow(cnts[idx,])
+```
+
+In the next notebook, we will revisit the clustering, and use a smaller number of clusters in order to perform classification. This notebook has provided some examples of exploring the term space using ordination, and provided a brief example of document clustering.
+Note however that clustering is a subjective process, there are some guideline metrics such as MSE within clusters that can be used to give a subjective measure of cluster density, and some rough guidelines around cuts in dendograms, however there is still a large amount of manual work involved in hand labelling the resulting clusters.
+The hand labelling can be assisted a great deal by visualisation and scripting capabilities that allow rapid exploration and relabelling of clusters. 
+This document provided an example of how this can be done in R.
+
