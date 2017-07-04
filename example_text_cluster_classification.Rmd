@@ -103,11 +103,24 @@ $$
 
 Where
 
-- $U$ will be a matrix of the dimension $m \times k$ representing the eigenvectors for the rows of the matrix $A$
+- $U$ will be a matrix of the dimension $m \times k$ representing the eigenvectors for the rows of the correlation matrix $AA'$ The columns in $U$ form an orthonormal basis.
 
-- $S$ will be a vector of dimension $k$ representing the eigenvalues for matrix $A$.
+- $S$ will be a vector of dimension $k$ representing the eigenvalues for both correlation matrices $AA'$ and $A'A$.
 
-- $V'$ is the matrix of dimension $k \times n$ representing the eivenvectors of the columns of the matrix $A$.
+- $V'$ is the matrix of dimension $k \times n$ representing the eivenvectors of the columns of the correlation matrix $A'A$. The columns in $V$ also form an orthonormal basis.
+
+Note that the matrix $A$ is standardised prior to performing the decomposition.
+
+The $S$ matrix is also later converted into a diagonal matrix $\Sigma = IS^{1/2}$ which is used in projecting matrices into a search space.
+
+There are a number of representations in the linear space that results that may be useful.
+
+Note also that $S$ can be approximated as.
+
+$$
+S = U' A V
+$$
+
 
 The total variation explained by each component of the decomposition can be determined by interpreting $S$ as the standard deviation and squaring it to determine the variance, the proportion of variance can be defined as
 
@@ -115,7 +128,13 @@ $$
 f_k = \frac{s_{k}^2}{\sum_{i=1}^r s_i^2}
 $$
 
-A scree plot can be used to visualise the contribution of the components.
+The measure of the total entropy (or amount of disorder in a set of objects) in the design matrix $A$ can be calculated as
+
+$$
+entropy = \frac{-1}{\log r} \sum_{k=1}^r \log (f_k)
+$$
+
+A scree plot can be used to visualise the contribution $f_k$ to total variation in the data set for each component.
 
 ```{r}
 total <- sum(searchS^2)
@@ -143,6 +162,22 @@ plot(eigenV[2:100]/total, type="b")
 ```
 If we were looking for the technique to yield a high amount of compression this suggests that there is little more than the first few linear combinations would be required from the projection of $AU$ or $AV'$ to effectively summarise the data, and in fact we will use this compression technique later on during classification.
 
+Where dimensionality reduction is required, it is also possible to use the subsets $k$ to compute reduced correlation matrices, that are of less dimension than $AA'$ and $A'A$ these are the truncated correlation matrices and can be calculated as:
+
+$$
+A_k A_k' = U_k (S_k^2) U_k'
+$$
+
+similarly
+
+
+$$
+A_k'A_k = V_k S_k^2 V_k'
+$$
+
+The resulting correlation matrices are lower dimensional representations of the original correlation matrix. These may be useful where lower dimensional approximation of $A_k$ is used in a distribution requiring correlation matrix as a parameter.
+
+
 Note also that the scree plot does not show the total number of components as the remainder become increasingly small, and therefore insignificant.
 
 The total dimensions of the raw term document matrix is as follows:
@@ -152,7 +187,8 @@ dim(doc_mat)
 ```
 That is we have a relatively small vocabulary in this data set, there are only 1607 terms, however we have just over 11 thousand utterances in total.
 
-We can visualise the term vector space as an ordination using the projection of the terms into the vector space and then rendering the first two components. We will use the vector space scaled by the square root of each singular value which is the search space that is used when projecting term vectors into the term space, note that a similar search space is used when performing queries against the term matrix. The search space is formed by the diagonal matrix $S_s = IS^{1/2}$ and the product of the search space for the terms $V_s = VS_s$.
+We can visualise the term vector space as an ordination using the projection of the terms into the vector space and then rendering the first two components. We will use the vector space scaled by the square root of each singular value which is the search space that is used when projecting term vectors into the term space, note that a similar search space is used when performing queries against the term matrix. The search space is formed by the diagonal matrix $S_s = IS^{1/2}$ (this is also denoted $\Sigma$ in articles on LSI) and the product of the search space for the terms $V_s = VS_s$.
+
 
 ```{r}
 n <- length(searchS)
@@ -162,8 +198,21 @@ diag(Ss) <- sqrt(searchS)
 
 Vp <- as.matrix(searchV)
 Vs <- Vp%*%Ss
+# dimension n terms x n terms
+dim(Vs)
 x <- Vs[,1]
 y <- Vs[,2]
+
+# what if we project the correlation matrix X'X for terms into the eigenvectors Vp
+X <- as.matrix(doc_mat)
+X <- scale(X)
+C <- t(X)%*%X
+Zv <- C%*%Vp
+dim(Zv)
+
+x <- Zv[,1]
+y <- Zv[,2]
+
 #y <- jitter(Vp[,2], factor=1, amount=max(y)-min(y))
 plot(x, y, type="n")
 text(x, y, labels=unique_words, cex=0.6)
@@ -174,9 +223,9 @@ Note the axes on the first dimension is relatively close, rotating about the oth
 
 ```{r, fig.width=10,fig.height=10}
 par.old <- par(mfrow=c(2,2))
-x <- Vs[,2]
+x <- Zv[,2]
 for(i in 3:6) {
-  y <- Vs[,i]
+  y <- Zv[,i]
   plot(x, y, type="n")
   text(x, y, labels=unique_words, cex=0.6)
 }
@@ -190,13 +239,27 @@ Hence we can investigate the use of the library "scatterD3" to support the visua
 
 ```{r, message=FALSE, error=FALSE, warning=FALSE}
 require(scatterD3)
+x <- Zv[,2]
+y <- Zv[,6]
 plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
 ```
 
+
 While the resulting ordination is tightly clustered around the center, those terms around the perimeter do provide some indication as to topics that are identifiable outside of the central cluster. 
 
 In this visualisation we note that the axis have opposing directions for "claimable" and "reported" for example.
+
+We can also investigate in higher dimensions although this is somewhat unwieldy.
+
+```{r}
+x <- Zv[,1]
+y <- Zv[,2]
+z <- Zv[,3]
+require(threejs)
+terms <- unique_words[1:length(x)]
+scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE)
+```
 
 We can also investigate a multidimensional scaling technique focusing only on the terms rather than documents using a euclidean distance between terms in the projection if we consider the matrix $V'$ to represent the relationship between terms we then make use of the vectors of each row of the matrix to calculate pairwise distances between each object (or term).
 
@@ -206,8 +269,10 @@ We will first generate a metric MDS (which should yield results similar to the e
 
 For example, we first examine the metric MDS and applying the distance on the transpose of the document term matrix rather than the term dimensions.
 
+
 ```{r}
-T <- t(doc_mat[,2:ncol(doc_mat)])
+T <- scale(as.matrix(doc_mat[,2:ncol(doc_mat)]))
+T <- t(T)
 Tdist <- dist(T, method="euclidean")
 Tmds <- cmdscale(Tdist, k=3, eig=TRUE)
 Tmds$GOF
@@ -247,9 +312,10 @@ We can also experiment with the nonmetric MDS which approximates the original di
 
 ```{r}
 require(vegan)
-Tmds2 <- monoMDS(Tdist, k=2)
+Tmds2 <- monoMDS(Tdist, k=3)
 x <- Tmds2$points[,1]
 y <- Tmds2$points[,2]
+z <- Tmds2$points[,3]
 
 plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
@@ -257,6 +323,10 @@ scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
 ```
 
 The projection of terms appears to be much less similar to the metric MDS and the SVD. The method approximates the order of distances only. For the purposes of the analysis, the components resulting from the SVD and metric MDS will be used.
+
+```{r}
+scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE)
+```
 
 __Term Frequency__
 
@@ -271,8 +341,8 @@ temp1 <- term_freq[order(-term_freq$count),]
 Applying the count to the ordination.
 
 ```{r}
-x <- Tmds$points[,2]
-y <- Tmds$points[,3]
+x <- Tmds$points[,1]
+y <- Tmds$points[,2]
 
 plotData <- data.frame(x=x, y=y, y2=y2, labels=unique_words[1:length(x)],
                        size=term_freq$count[1:length(x)])
@@ -305,7 +375,7 @@ y2 <- Tmds$points[,3]
 plotData <- data.frame(x=x, y=y, y2=y2, labels=unique_words[1:length(x)], cluster=factor(cuts[1:length(x)]),
                        size=term_freq$count[1:length(x)])
 
-scatterD3(plotData, x=y, y=y2, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0,
+scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0,
           size_var=size)
 
 
@@ -320,7 +390,7 @@ It is also possible to explore the use of the clustering method on the search sp
 
 
 ```{r, fig.width=20, fig.height=10}
-D <- t(apply(Vs, 1, function(x)(x-min(x))/(max(x)-min(x))))
+D <- t(apply(Vp, 1, function(x)(x-min(x))/(max(x)-min(x))))
 Ds <- as.dist(D)
 hc2 <- hclust(Ds, method="centroid")
 plot(hc2, hang=-1, cex=0.3)
@@ -331,7 +401,7 @@ The resulting dendogram is much harder to separate, we can attempt to use the in
 ```{r}
 cuts2 <- cutree(hc2, k=20)
 hist(cuts2, breaks=20)
-plotData <- data.frame(x=Vs[,2], y=Vs[,3],labels=unique_words[1:length(Vs[,2])], cluster=cuts2[1:length(Vs[,2])], size=term_freq$count[1:length(Vs[,2])])
+plotData <- data.frame(x=Vp[,1], y=Vp[,2],labels=unique_words[1:length(Vs[,2])], cluster=cuts2[1:length(Vs[,2])], size=term_freq$count[1:length(Vs[,2])])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0
           ,size_var=size)
 ```

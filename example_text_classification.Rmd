@@ -6,8 +6,33 @@ output: html_notebook
 ---
 This document continues the process started in the example clustering notebook. We reload the data and generate the search space for documents and assign labels and clusters so that it is possible to generate a classifier.
 
+Note below loads the decomposed tf-idf scaled matrix $T_{tf-idf}$ 
+
+$$
+USV' = T_{tf-idf}
+$$
+
+When projecting into the search space for either $U$ or $V$ either matrix is multiplied by the root of the diagonal matrix $S$.
+
+$$
+U_s = US^{1/2}
+$$
+$$
+U_v = VS^{1/2}
+$$
+
+The singular values in $S$ describe the scaling of each dimension in either $U$ or $V$ in relation to the others. If interpreting eigenvalue in $S$ as being the variance explained for each component, the scaling multiplies by the standard deviation.
+
 
 ```{r}
+require(dplyr)
+require(tidyr)
+require(ggplot2)
+source("preprocess_text.R")
+source("prepare_svd_document_model.R")
+source("svd_search.R")
+outputBase <- "data/csexample/"  
+
 data <- load_document_data(outputBase)
 doc_mat <- load_document_term_mat(outputBase)
   unique_words <- load_unique_words(outputBase)
@@ -16,23 +41,155 @@ doc_mat <- load_document_term_mat(outputBase)
   searchU <- searchA$u
   searchS <- searchA$d
   # transposed relation of attributes to objects rows equal the attributes
+  # keep in mind that this search space is the transposed matrix $V'$.
+  # without transposing the rows in $V'$ form the orthonormal basis.
   searchV <- searchA$v
 
+  # max diagonal of eigenvalues
+  n <- length(searchS)
+temp <- rep(0, n*n)
+Ss <- matrix(temp, nrow=n, ncol=n)
+diag(Ss) <- sqrt(searchS)
+  
 cnts <- count(data, group_by=factor(app_tag))
 k <- nrow(cnts)
+# generate a document projection
 Us <- searchU%*%Ss
+
+length(unique_words)
+
+terms <- c(unique_words, "undefined")
+colnames(Us) <- terms
+
+# dimension m documents x n terms
+dim(Us)
+
+## clustering based on application tags.
 clust <- kmeans(Us, k)
 length(clust$cluster)
 
 dataSet <- data.frame(Us)
-dataSet$rowId <- data$row
-dataSet$appTag <- data$app_tag
-dataSet$cluster <- data$cluster
+dataSet$rowId <- data$row[1:nrow(Us)]
+dataSet$appTag <- factor(data$app_tag[1:nrow(Us)])
+dataSet$cluster <- factor(clust$cluster)
 
+
+```
+
+
+Some tags only have 1 example, we cannot train on those tags, we need at least more than one example, additionally any set of small examples is not guaranteed to be useful.
+
+This means we need to obtain more samples for those tags. However in order to proceed we will need to remove those tags that do not have enough examples, initially we will use a threshold of at least > 10 tags.
+
+```{r, fig.height=12, fig.width=8}
+
+
+cnts <- cnts[order(cnts$n),]
+
+ggplot(cnts, aes(group_by)) +
+  geom_bar(aes(weight=n)) +
+  scale_x_discrete(limits=cnts$group_by) +
+  coord_flip() +
+  theme(axis.text.y=element_text(size=4))
+```
+
+An important issue is the size of each of the groups, when preparing a data set that is used in supervised (or semi-supervised) learning, it is important to ensure that there is a large enough representation for each group. 
+
+We will go ahead and remove the under represented groups which we consider to be any tag with less than 10 examples.
+
+```{r}
+# clean the data
+
+idx <- which(cnts$n <= 10)
+remove_tags <- cnts[idx,]$group_by
+
+idx <- which(dataSet$appTag %in% remove_tags)
+
+# clean the data set
+dataSet <- dataSet[-idx,]
+# clean the search matrix
+Us <- Us[-idx,]
+```
+
+Before modelling we should identify highly correlated factors. As highly correlated factors are collinear they essentially describe the same effect, and one of each pair should be removed.
+
+For text, this could be an interesting thing in itself, to identify terms that have strong correlation in the search space.
+
+The method of identifying the highly correlated factors is simply to construct a correlation matrix and filter it based on a threshold.
+
+We are interested in strong negative or strong positive correlations, a reasonably threshold is $\pm 0.7$.
+
+```{r}
+
+## before we run the LDA we need to determine which variables are colinear.
+C <- cor(Us)
+
+#
+
+# which correlations are greater than 0.5
+# this indicates that there are columns that are colinear due to the high level of correlation
+# I've used a threshold of 0.7 to determine high levels of correlation.
+idx <- which(abs(C) >= 0.7, arr.ind=TRUE)
+terms <- c(unique_words, "undefined")
+row.names(C) <- terms
+
+temp <- data.frame(idx)
+temp$termA = terms[temp$row]
+temp$termB = terms[temp$col]
+temp$cor <- C[idx]
+temp[temp$row != temp$col,]
+
+```
+
+It appears that there are only two records that are very highly correlated, "ability" and "abb".
+
+We will need to remove the highly correlated columns, and leave only one of each pair.
+
+```{r}
+pairs <- temp[temp$row != temp$col,]
+pairs
+cols <- 1:ncol(Us)
+pairs
+# we have the distinct values, now we need to find the distinct pairings
+# we need to order the values of each row in ascending order 
+T <- pairs[,1:2]
+for(i in 1:nrow(T)) {
+  r <- T[i,]
+  if (r$row > r$col) {
+    a <- r$row
+    r$row <- r$col
+    r$col <- a
+    T[i,] <- r
+  }
+}
+# distinct columns
+cols <- unlist(T%>% distinct(col))
+# we now need to remove those columns
+temp <- dataSet
+temp <- temp[,-cols]
+dataSet <- temp
 dim(dataSet)
+# now redefine the terms we are using
+terms <- terms[-cols]
+```
+
+Now we can subset the data.
+
+```{r}
+
 
 require(caret)
 require(MASS)
+require(MVN)
+
+
+k <- length(terms)
+# note the data set is already scaled.
+dataSet[,1:k] <- (dataSet[,1:k])
+# we need to drop the unused levels
+# as we have removed a set of tags that are under represented
+dataSet$appTag <- droplevels(dataSet$appTag)
+
 set.seed(101)
 inTrain <- createDataPartition(y=dataSet$appTag, p=0.75,list=FALSE)
 dsTrain <- dataSet[inTrain,]
@@ -42,7 +199,101 @@ inTrain2 <- createDataPartition(y=factor(dataSet$cluster), p=0.75,list=FALSE)
 dsTrain2 <- dataSet[inTrain2,]
 dsTest2 <- dataSet[-inTrain2,]
 
-lda1 <- lda(as.matrix(dsTrain[,1:ncol(Us)]), grouping=dsTrain$appTag)
-test1 <- predict(ds)
+
 ```
 
+And attempt to build a partial least squares linear discriminant analysis as the first model.
+
+```{r}
+require(caret)
+
+dsTrain$appTag <- droplevels(dsTrain$appTag)
+
+
+
+model1 <- plsda(dsTrain[,1:k], y=dsTrain$appTag)
+
+## model1 <- lda(dsTrain[,1:k], grouping=dsTrain$appTag)
+
+
+dsTest$appTag <- droplevels(dsTest$appTag)
+
+test1 <- predict(model1, dsTest[,1:k])
+
+# we now need to tabulate the predictions
+results <- table(test1, dsTest$appTag)
+# we should display only those where there is a classification.
+idx <- which(results > 0, arr.ind =TRUE)
+# identify the correct classifications, which are the sum of the diagonal
+correct <- sum(diag(results))
+accuracy <- correct/ nrow(dsTest)
+
+heatmap(results)
+
+paste("Accuracy", round(accuracy*100, 2), "%")
+
+```
+The heatmap for the results indicates there is a large bias in the model towards
+
+- PaymentsEnquire
+
+- ClaimStatus
+
+- CardConcession
+
+
+Against the hand labelled data the classifier built on PSLDA above does not perform very well at all.
+
+Recall the lack of linear separability in the data based on the hand labelled data versus the cluster labels.
+
+We can quickly perform a comparison via the cluster labels.
+
+```{r}
+
+dsTrain$cluster <- droplevels(dsTrain$cluster)
+model2 <- plsda(dsTrain[,1:k], y=dsTrain$cluster)
+
+dsTest$cluster <- droplevels(dsTest$cluster)
+
+test2 <- predict(model2, dsTest[,1:k])
+
+
+# we now need to tabulate the predictions
+results2 <- table(test2, dsTest$cluster)
+# we should display only those where there is a classification.
+idx <- which(results2 > 0, arr.ind =TRUE)
+# identify the correct classifications, which are the sum of the diagonal
+correct <- sum(diag(results2))
+accuracy <- correct/ nrow(dsTest)
+
+heatmap(results2)
+
+paste("Accuracy", round(accuracy*100, 2), "%")
+```
+
+Lets have a look at the SVM Method.
+
+```{r}
+require(kernlab)
+
+train <- dsTrain[,1:k]
+train$appTag <- dsTrain$appTag
+
+# Building the svm takes significant compute resources and may take several hours to train.
+#svm1 <- ksvm(appTag ~., data=train)
+
+svmTest1 <- predict(svm1, dsTest[,1:k])
+
+# we now need to tabulate the predictions
+results3 <- table(svmTest1, dsTest$appTag)
+# we should display only those where there is a classification.
+idx <- which(results3 > 0, arr.ind =TRUE)
+# identify the correct classifications, which are the sum of the diagonal
+correct <- sum(diag(results3))
+accuracy <- correct/ nrow(dsTest)
+
+heatmap(results3)
+
+paste("Accuracy", round(accuracy*100, 2), "%")
+
+```
