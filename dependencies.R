@@ -16,7 +16,13 @@ require_dependencies <- function(deps=c()) {
   sapply(deps, function(p) require(p, character.only=TRUE))
 }
 
-deps <- c("devtools","MASS", "MVN", "scatterD3", "crosstalk")
+deps <- c("devtools",
+          "MASS", 
+          "MVN", 
+          "scatterD3", 
+          "crosstalk",
+          "stringr",
+          "shiny")
 
 install_dependencies (deps)
 

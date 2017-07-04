@@ -206,7 +206,7 @@ y <- Vs[,2]
 X <- as.matrix(doc_mat)
 X <- scale(X)
 C <- t(X)%*%X
-Zv <- C%*%Vp
+Zv <- C%*%Vs
 dim(Zv)
 
 x <- Zv[,1]
@@ -238,8 +238,8 @@ Hence we can investigate the use of the library "scatterD3" to support the visua
 
 ```{r, message=FALSE, error=FALSE, warning=FALSE}
 require(scatterD3)
-x <- Vs[,60]
-y <- Vs[,88]
+x <- Zv[,60]
+y <- Zv[,88]
 plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
 ```
@@ -253,8 +253,8 @@ We can also investigate in higher dimensions although this is somewhat unwieldy.
 
 ```{r}
 x <- Zv[,1]
-y <- Zv[,2]
-z <- Zv[,3]
+y <- Zv[,60]
+z <- Zv[,20]
 require(threejs)
 terms <- unique_words[1:length(x)]
 scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE)
@@ -324,7 +324,7 @@ scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
 The projection of terms appears to be much less similar to the metric MDS and the SVD. The method approximates the order of distances only. For the purposes of the analysis, the components resulting from the SVD and metric MDS will be used.
 
 ```{r}
-scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE)
+#scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE)
 ```
 
 __Term Frequency__
