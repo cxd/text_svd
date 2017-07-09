@@ -566,14 +566,13 @@ ggplot(uniform, aes(labels)) +
 <p>Lastly since the application tags may not necessarily describe suitable boundaries it is worthwhile experimenting with the clustering partitions that are defined by the clustering algorithm such as kmeans. We can use the cluster as the partition group and determine if a simple LDA can separate between these groups.</p>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZHNUcmFpbiRhcHBUYWcgPC0gYXMuY2hhcmFjdGVyKGRzVHJhaW4kYXBwVGFnKVxubW9kZWwxYSA8LSBxZGEoWCwgZHNUcmFpbiRhcHBUYWcsIG1ldGhvZD1cIm1sZVwiKVxuXG5gYGAifQ== -->
-<pre class="r"><code>dsTrain$appTag &lt;- as.character(dsTrain$appTag)
-model1a &lt;- qda(X, dsTrain$appTag, method=&quot;mle&quot;)
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZHNUcmFpbiRhcHBUYWcgPC0gZHJvcGxldmVscyhkc1RyYWluJGFwcFRhZylcblxuYGBgIn0= -->
+<pre class="r"><code>dsTrain$appTag &lt;- droplevels(dsTrain$appTag)
 </code></pre>
 <!-- rnb-source-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiRXJyb3IgaW4gcWRhLmRlZmF1bHQoeCwgZ3JvdXBpbmcsIC4uLikgOiBcbiAgc29tZSBncm91cCBpcyB0b28gc21hbGwgZm9yICdxZGEnXG4ifQ== -->
-<pre><code>Error in qda.default(x, grouping, ...) : 
-  some group is too small for 'qda'</code></pre>
+<!-- rnb-output-begin eyJkYXRhIjoiRXJyb3IgaW4gVXNlTWV0aG9kKFwiZHJvcGxldmVsc1wiKSA6IFxuICBubyBhcHBsaWNhYmxlIG1ldGhvZCBmb3IgJ2Ryb3BsZXZlbHMnIGFwcGxpZWQgdG8gYW4gb2JqZWN0IG9mIGNsYXNzIFwiY2hhcmFjdGVyXCJcbiJ9 -->
+<pre><code>Error in UseMethod(&quot;droplevels&quot;) : 
+  no applicable method for 'droplevels' applied to an object of class &quot;character&quot;</code></pre>
 <!-- rnb-output-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
