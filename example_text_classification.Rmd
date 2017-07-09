@@ -31,6 +31,7 @@ require(ggplot2)
 source("preprocess_text.R")
 source("prepare_svd_document_model.R")
 source("svd_search.R")
+source("classification_metrics.R")
 outputBase <- "data/csexample/"  
 
 data <- load_document_data(outputBase)
@@ -51,10 +52,47 @@ temp <- rep(0, n*n)
 Ss <- matrix(temp, nrow=n, ncol=n)
 diag(Ss) <- sqrt(searchS)
   
+
+```
+
+Let's use the percentage of variance explained to determine the number of components to use in dimensionality reduction.
+
+```{r}
+total <- sum(searchS^2)
+percent <- searchS^2/total
+cumulative <- cumsum(percent)
+df <- data.frame(component=1:length(searchS), percent=percent, cumulative=cumulative, variance=searchS^2)
+df$component <- as.factor(df$component)
+
+minVariance <- 0.99
+
+idx <- which(df$cumulative >= 0.99)
+nComponents <- min(idx)
+
+df2 <- df[1:nComponents,]
+
+ggplot(df2) +
+  geom_bar(aes(x=component, y=percent), stat="identity") +
+  ggtitle(paste("99% of variance explained in ", nComponents, "components"))
+
+
+
+```
+
+
+```{r}
+
 cnts <- count(data, group_by=factor(app_tag))
 k <- nrow(cnts)
 # generate a document projection
 Us <- searchU%*%Ss
+
+# Instead of using the search matrix project the document matrix into the searchU matrix
+# then use the first 100 components of Z
+M <- as.matrix(doc_mat)
+Z <- searchU%*%t(M)
+dim(Z)
+Z <- Z[,1:nComponents]
 
 length(unique_words)
 
@@ -65,14 +103,13 @@ colnames(Us) <- terms
 dim(Us)
 
 ## clustering based on application tags.
-clust <- kmeans(Us, k)
+clust <- kmeans(Z, k)
 length(clust$cluster)
 
-dataSet <- data.frame(Us)
-dataSet$rowId <- data$row[1:nrow(Us)]
-dataSet$appTag <- factor(data$app_tag[1:nrow(Us)])
+dataSet <- data.frame(Z)
+dataSet$rowId <- data$row[1:nrow(Z)]
+dataSet$appTag <- factor(data$app_tag[1:nrow(Z)])
 dataSet$cluster <- factor(clust$cluster)
-
 
 ```
 
@@ -105,72 +142,45 @@ remove_tags <- cnts[idx,]$group_by
 
 idx <- which(dataSet$appTag %in% remove_tags)
 
+temp <- dataSet
+
 # clean the data set
 dataSet <- dataSet[-idx,]
-# clean the search matrix
-Us <- Us[-idx,]
 ```
 
-Before modelling we should identify highly correlated factors. As highly correlated factors are collinear they essentially describe the same effect, and one of each pair should be removed.
+We should also inspect the data associated with the clusters.
 
-For text, this could be an interesting thing in itself, to identify terms that have strong correlation in the search space.
 
-The method of identifying the highly correlated factors is simply to construct a correlation matrix and filter it based on a threshold.
-
-We are interested in strong negative or strong positive correlations, a reasonably threshold is $\pm 0.7$.
+We first check the distribution of items within each cluster, the number of selected clusters we defined as the same number of tags.
 
 ```{r}
+cnts2 <- count(dataSet, group_by=as.factor(cluster))
+cnts2 <- cnts2[order(-cnts2$n),]
+cnts2
 
-## before we run the LDA we need to determine which variables are colinear.
-C <- cor(Us)
+cnts2 <- cnts2[order(cnts2$n),]
 
-#
-
-# which correlations are greater than 0.5
-# this indicates that there are columns that are colinear due to the high level of correlation
-# I've used a threshold of 0.7 to determine high levels of correlation.
-idx <- which(abs(C) >= 0.7, arr.ind=TRUE)
-terms <- c(unique_words, "undefined")
-row.names(C) <- terms
-
-temp <- data.frame(idx)
-temp$termA = terms[temp$row]
-temp$termB = terms[temp$col]
-temp$cor <- C[idx]
-temp[temp$row != temp$col,]
+ggplot(cnts2, aes(group_by)) +
+  geom_bar(aes(weight=n)) +
+  scale_x_discrete(limits=cnts2$group_by) +
+  coord_flip() +
+  theme(axis.text.y=element_text(size=4))
 
 ```
 
-It appears that there are only two records that are very highly correlated, "ability" and "abb".
-
-We will need to remove the highly correlated columns, and leave only one of each pair.
+And create a second data set filtering out those clusters with a membership of only 1.
 
 ```{r}
-pairs <- temp[temp$row != temp$col,]
-pairs
-cols <- 1:ncol(Us)
-pairs
-# we have the distinct values, now we need to find the distinct pairings
-# we need to order the values of each row in ascending order 
-T <- pairs[,1:2]
-for(i in 1:nrow(T)) {
-  r <- T[i,]
-  if (r$row > r$col) {
-    a <- r$row
-    r$row <- r$col
-    r$col <- a
-    T[i,] <- r
-  }
-}
-# distinct columns
-cols <- unlist(T%>% distinct(col))
-# we now need to remove those columns
-temp <- dataSet
-temp <- temp[,-cols]
-dataSet <- temp
-dim(dataSet)
-# now redefine the terms we are using
-terms <- terms[-cols]
+# create a second data set that is based on the clusters rather than tags.
+idx <- which(cnts2$n <= 10)
+remove_tags <- cnts2[idx,]$group_by
+
+idx <- which(temp$cluster %in% remove_tags)
+
+
+# clean the data set
+dataSet2 <- temp[-idx,]
+
 ```
 
 Now we can subset the data.
@@ -183,9 +193,6 @@ require(MASS)
 require(MVN)
 
 
-k <- length(terms)
-# note the data set is already scaled.
-dataSet[,1:k] <- (dataSet[,1:k])
 # we need to drop the unused levels
 # as we have removed a set of tags that are under represented
 dataSet$appTag <- droplevels(dataSet$appTag)
@@ -195,10 +202,11 @@ inTrain <- createDataPartition(y=dataSet$appTag, p=0.75,list=FALSE)
 dsTrain <- dataSet[inTrain,]
 dsTest <- dataSet[-inTrain,]
 
-inTrain2 <- createDataPartition(y=factor(dataSet$cluster), p=0.75,list=FALSE)
-dsTrain2 <- dataSet[inTrain2,]
-dsTest2 <- dataSet[-inTrain2,]
 
+## the data set using the cluster for group partition.
+inTrain2 <- createDataPartition(y=as.factor(dataSet2$cluster), p=0.75,list=FALSE)
+dsTrain2 <- dataSet2[inTrain2,]
+dsTest2 <- dataSet2[-inTrain2,]
 
 ```
 
@@ -210,27 +218,50 @@ require(caret)
 dsTrain$appTag <- droplevels(dsTrain$appTag)
 
 
+# 100 is the number of components selected
+#model1 <- plsda(dsTrain[,1:nComponents], y=dsTrain$appTag)
 
-model1 <- plsda(dsTrain[,1:k], y=dsTrain$appTag)
+## 
+model1 <- lda(dsTrain[,1:nComponents], grouping=dsTrain$appTag)
 
-## model1 <- lda(dsTrain[,1:k], grouping=dsTrain$appTag)
+## save the model for reuse
+ saveRDS(model1, file=paste(outputBase, "model1_lda.RData", sep=""))
+ 
 
 
 dsTest$appTag <- droplevels(dsTest$appTag)
 
-test1 <- predict(model1, dsTest[,1:k])
+
+
+test1 <- predict(model1, dsTest[,1:nComponents])
+
+predictedTags <- test1$class
+
+remove(model1)
+gc()
+```
+
+```{r}
+# compute classification metrics
+metrics <- classification_metrics(predictedTags, dsTest$appTag)
+
 
 # we now need to tabulate the predictions
-results <- table(test1, dsTest$appTag)
-# we should display only those where there is a classification.
-idx <- which(results > 0, arr.ind =TRUE)
+results <- metrics$resultTable
+
 # identify the correct classifications, which are the sum of the diagonal
 correct <- sum(diag(results))
-accuracy <- correct/ nrow(dsTest)
+accuracy <- metrics$uniformAccuracy
+nonUniformAccuracy <- metrics$nonUniformAvgAccuracy
+randomAccuracy <- metrics$randomAccuracy
 
-heatmap(results)
+heatmap(results, cex.lab=0.5, keep.dendro=FALSE, Rowv=NA, Colv=NA)
 
-paste("Accuracy", round(accuracy*100, 2), "%")
+paste("Overall Uniform accuracy for manually labelled tags", round(accuracy*100, 2), "%")
+
+paste("Avg accuracy for nonuniform distribution for manually labelled tags", round(nonUniformAccuracy*100, 2), "%")
+
+paste("Random accuracy for manually labelled tags", round(randomAccuracy*100, 2), "%")
 
 ```
 The heatmap for the results indicates there is a large bias in the model towards
@@ -241,59 +272,135 @@ The heatmap for the results indicates there is a large bias in the model towards
 
 - CardConcession
 
+Note also that as the diagonal that is visible is due to the clustering presented in the heatmap.
 
-Against the hand labelled data the classifier built on PSLDA above does not perform very well at all.
+We should examine the statistics for each individual class
 
-Recall the lack of linear separability in the data based on the hand labelled data versus the cluster labels.
+```{r, fig.width=4, fig.height=8}
+uniform <- metrics$uniformStats
+uniform$proportion <- uniform$cnt / sum(uniform$cnt)
+uniform <- uniform[order(-uniform$cnt),] 
 
-We can quickly perform a comparison via the cluster labels.
+uniform
+
+uniform <- uniform[order(uniform$cnt),] 
+
+ggplot(uniform, aes(labels)) +
+  geom_bar(aes(weight=precision), fill="blue") +
+  geom_bar(aes(weight=proportion), fill="red") +
+  scale_x_discrete(limits=uniform$labels) +
+  coord_flip() + 
+  theme(axis.text.y=element_text(size=4)) +
+  ggtitle("Tag Precision vs Instance Count in Test Set")
+
+
+
+ggplot(uniform, aes(labels)) +
+  geom_bar(aes(weight=recall), fill="blue") +
+  geom_bar(aes(weight=proportion), fill="red") +
+  scale_x_discrete(limits=uniform$labels) +
+  coord_flip() + 
+  theme(axis.text.y=element_text(size=4)) +
+  ggtitle("Tag Recall vs Instance Count in Test Set")
+
+```
+
+The above provides a fit of a linear discriminant analysis model to the groups that have been manually defined. These groups are the app_tag that label each example in the corpus. The measures for precision (accuracy per term) and recall per term are given in the above charts as well as the number of instances per term in the test set. 
+
+The resulting model performed better than random on the given test set, and performed well on the terms that have good representation within the data set.
+
+The data set however is non-uniform, the app tags or classes do not have a uniform representation within the corpus, this makes it difficult for the model to discriminate terms that are not well represented.
+
+
+Additionally, the linear discriminant model learns a set of linear boundaries between groups, this is the first approach to experiment with, it also assumes common variance and normality within groups. However is reasonably robust under these assumptions. The LDA is a good choice for initial experimentation with classification to determin whether partitions may be learnt within the data set. If it performs well, it may not be necessary to experiment with more computationally demanding models. 
+
+Also the model has been training on a high number of dimensions for each sample some 1400 or so attributes in the projected variable $Z$, it may be desirable to apply a training algorithm such as k-fold to test feature reduction in order to determine an optimal choice of features. The number of features we have selected are based on the percentage of variance explained, with a cutoff of 99% of variation.
+
+
+We can extend this method by making use of the a kernel based method in order to estimate non-linear boundaries within the data. 
+
+There are several techniques, the first approach below is to use quadratic disciminant analysis.
+
+The second will investigate the ldfa library provides a kernel discriminant analysis in support of this approach.
+
+
+Lastly since the application tags may not necessarily describe suitable boundaries it is worthwhile experimenting with the clustering partitions that are defined by the clustering algorithm such as kmeans. We can use the cluster as the partition group and determine if a simple LDA can separate between these groups.
 
 ```{r}
+# we need to use reduced dimensions so choosing initially the first 100 components.
 
-dsTrain$cluster <- droplevels(dsTrain$cluster)
-model2 <- plsda(dsTrain[,1:k], y=dsTrain$cluster)
+X <- dsTrain[,1:nComponents]
+dsTrain$appTag <- droplevels(dsTrain$appTag)
 
-dsTest$cluster <- droplevels(dsTest$cluster)
+# TODO: work out why the error "some group is too small" occurs
+# is it due to any non-singularity within groups?
+# or is it due to levels in appTag containing 0 population?
 
-test2 <- predict(model2, dsTest[,1:k])
+model1a <- qda(X, dsTrain$appTag, method="mle")
+
+## save the model for reuse
+saveRDS(model1a, file=paste(outputBase, "model1_qda.RData", sep=""))
+
+test1a <- predict(model1a, dsTest[,1:nComponents])
+
+predictedTags <- test1
+
+gc()
+
+
+```
+
+```{r}
+require(lfda)
+
+# we need to use reduced dimensions so choosing initially the first 100 components.
+n <- 100
+X <- dsTrain[,1:n]
+# generate the kernal model, in this case we use a guassian model
+g <- kmatrixGauss(X)
+#
+# generate the model, the modell generates an estimate on the test set at the same time.
+# the first parameter is the gaussian model generated above.
+# the second are the labels for groups
+# the third is the desired number of components to be produced, in our case we are using the same number of components, but we can attempt to evaluate the model in lower dimensions.
+model1b <- klfda(g, dsTrain$appTag, nComponents, metric="plain")
+
+
+## save the model for reuse
+saveRDS(model1b, file=paste(outputBase, "model1_klfda.RData", sep=""))
+
+test1a <- predict(model1a, dsTest[,1:nComponents])
+
+predictedTags <- test1
+
+gc()
+
+
+```
+
+```{r}
+# compute classification metrics
+metrics <- classification_metrics(predictedTags, dsTest$appTag)
 
 
 # we now need to tabulate the predictions
-results2 <- table(test2, dsTest$cluster)
-# we should display only those where there is a classification.
-idx <- which(results2 > 0, arr.ind =TRUE)
+results <- metrics$resultTable
+
 # identify the correct classifications, which are the sum of the diagonal
-correct <- sum(diag(results2))
-accuracy <- correct/ nrow(dsTest)
+correct <- sum(diag(results))
+accuracy <- metrics$uniformAccuracy
+nonUniformAccuracy <- metrics$nonUniformAvgAccuracy
+randomAccuracy <- metrics$randomAccuracy
 
-heatmap(results2)
+heatmap(results, cex.lab=0.5, keep.dendro=FALSE, Rowv=NA, Colv=NA)
 
-paste("Accuracy", round(accuracy*100, 2), "%")
+paste("Overall Uniform accuracy for manually labelled tags", round(accuracy*100, 2), "%")
+
+paste("Avg accuracy for nonuniform distribution for manually labelled tags", round(nonUniformAccuracy*100, 2), "%")
+
+paste("Random accuracy for manually labelled tags", round(randomAccuracy*100, 2), "%")
+
 ```
 
-Lets have a look at the SVM Method.
 
-```{r}
-require(kernlab)
 
-train <- dsTrain[,1:k]
-train$appTag <- dsTrain$appTag
-
-# Building the svm takes significant compute resources and may take several hours to train.
-#svm1 <- ksvm(appTag ~., data=train)
-
-svmTest1 <- predict(svm1, dsTest[,1:k])
-
-# we now need to tabulate the predictions
-results3 <- table(svmTest1, dsTest$appTag)
-# we should display only those where there is a classification.
-idx <- which(results3 > 0, arr.ind =TRUE)
-# identify the correct classifications, which are the sum of the diagonal
-correct <- sum(diag(results3))
-accuracy <- correct/ nrow(dsTest)
-
-heatmap(results3)
-
-paste("Accuracy", round(accuracy*100, 2), "%")
-
-```

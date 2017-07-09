@@ -19,12 +19,16 @@ require_dependencies <- function(deps=c()) {
 deps <- c("devtools",
           "MASS", 
           "MVN", 
+          "caret",
           "scatterD3", 
           "crosstalk",
           "stringr",
-          "shiny")
+          "shiny",
+          "threejs",
+          "ks",
+          "lfda")
 
 install_dependencies (deps)
 
-devtools::install_github("bwlewis/rthreejs")
+##devtools::install_github("bwlewis/rthreejs")
 

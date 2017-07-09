@@ -5,6 +5,12 @@ date: '04-06-2017'
 output: html_notebook
 ---
 
+```{r setup}
+library(rgl)
+library(knitr)
+knit_hooks$set(webgl=hook_webgl)
+```
+
 ## Introduction
 
 This document provides a demonstration of conversion of text into a document matrix, and the application of a
@@ -36,6 +42,7 @@ In this example the data has the csv format with headings
 - app_tag
   - a hand labelled tag that is associated with the utterance.
   
+Note that there is some question as to the suitability of the hand labelled tags sem_tag and app_tag, do they segment the utterances effectively? The process of hand labelling within the telephony domain is largely subjective and is determined by the consultation process between an analyst and an end customer. It is also hampered to some extent due to the process necessarily occuring on a subset of examples.
   
 In reading the data we will associate the row id, and will retain the app_tag.
 The transcription will be converted into a tf-idf matrix using a simple tokenisation. The tf-idf is calculated largely from the components of 
@@ -76,7 +83,7 @@ id_cols <- c("row")
 
 # note this is used to generate the document term matrix from scratch and is commented out
 # for subsequent runs after initially used to build the document term matrix.
-#prepare_document_model(file, data_cols, id_cols, outputBase, text_col="transcription")
+# prepare_document_model(file, data_cols, id_cols, outputBase, text_col="transcription")
 
 ```
 
@@ -152,13 +159,13 @@ The first component explains close to 100% of all variation, the corresponding e
 
 We can either estimate this as a proportion of the remaining fraction or plot the proportion of the total variation.
 
-The second components onwards are plotted as follows.
+The first 100 components are plotted as follows.
 
 ```{r}
 
-plot(eigenV[2:100], type="b")
+plot(eigenV[1:100], type="b")
 
-plot(eigenV[2:100]/total, type="b")
+plot(eigenV[1:100]/total, type="b")
 ```
 If we were looking for the technique to yield a high amount of compression this suggests that there is little more than the first few linear combinations would be required from the projection of $AU$ or $AV'$ to effectively summarise the data, and in fact we will use this compression technique later on during classification.
 
@@ -218,21 +225,9 @@ text(x, y, labels=unique_words, cex=0.6)
 ```
 
 
-Note the axes on the first dimension is relatively close, rotating about the other axis provides additional view of the data (often known as a grand tour).
+Note the axes on the first dimension is relatively close, rotating about the other axis provides additional view of the data.
 
-```{r, fig.width=10,fig.height=10}
-par.old <- par(mfrow=c(2,2))
-x <- Zv[,2]
-for(i in 3:6) {
-  y <- Zv[,i]
-  plot(x, y, type="n")
-  text(x, y, labels=unique_words, cex=0.6)
-}
-
-par(par.old)
-```
-
-Note we can explore the space of one projection to examine the terms that are located in the ordination. Given that the area between -0.1 and 0.1 is quite dense it is possible to explore this further. However interactive graphics of course would allow much more detailed exploration of the terms in the vector space.
+We can explore the space of one projection to examine the terms that are located in the ordination. Given that the area between -0.1 and 0.1 is quite dense it is possible to explore this further. However interactive graphics of course would allow much more detailed exploration of the terms in the vector space.
 
 Hence we can investigate the use of the library "scatterD3" to support the visualisation. Here we are using the 60th dimension for "allowance" and the 88th dimension for "apply". The visualisation that is produced visualises the terms in relation to the axes formed in the search space by the terms "allowance" and "apply".
 
@@ -242,7 +237,9 @@ x <- Zv[,60]
 y <- Zv[,88]
 plotData <- data.frame(x=x, y=y,labels=unique_words[1:length(x)])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0)
+
 ```
+
 
 
 While the resulting ordination is tightly clustered around the center, those terms around the perimeter do provide some indication as to topics that are identifiable outside of the central cluster. 
@@ -257,7 +254,7 @@ y <- Zv[,60]
 z <- Zv[,20]
 require(threejs)
 terms <- unique_words[1:length(x)]
-scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE)
+scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE, use.orbitcontrols=TRUE)
 ```
 
 We can also investigate a multidimensional scaling technique focusing only on the terms rather than documents using a euclidean distance between terms in the projection if we consider the matrix $V'$ to represent the relationship between terms we then make use of the vectors of each row of the matrix to calculate pairwise distances between each object (or term).
@@ -389,7 +386,7 @@ It is also possible to explore the use of the clustering method on the search sp
 
 
 ```{r, fig.width=20, fig.height=10}
-D <- t(apply(Vp, 1, function(x)(x-min(x))/(max(x)-min(x))))
+D <- t(apply(Vs, 1, function(x)(x-min(x))/(max(x)-min(x))))
 Ds <- as.dist(D)
 hc2 <- hclust(Ds, method="centroid")
 plot(hc2, hang=-1, cex=0.3)
@@ -409,13 +406,52 @@ From the histogram of the cuts we can see this method does not produce good sepa
 
 ```{r}
 k <- kmeans(Vs, 20)
-plotData <- data.frame(x=Vs[,3], y=Vs[,4],labels=unique_words[1:length(Vs[,2])], cluster=k$cluster, size=term_freq$count[1:length(Vs[,2])])
+plotData <- data.frame(x=Vs[,20], y=Vs[,30],labels=unique_words[1:length(Vs[,2])], cluster=k$cluster, size=term_freq$count[1:length(Vs[,2])])
 scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, 
           legend_width=0, size_var=size)
 
 ```
 
 This gives some separation that is more apparent when zooming into the clusters the coloration gives some details as to the separation between groups of terms.
+
+We can also work with the projection onto the set of key components by projecting the term matrix into the top $n$ components and generate the corresponding distance matrix. For our case we choose the top 100 components.
+
+
+```{r}
+X <- as.matrix(doc_mat)
+X <- scale(X)
+C <- t(X)%*%X
+Z <- C%*%Vs
+dim(Z)
+M <- Z[,1:100]
+# calculate distance matrix with each row being a term, and columns being the first 100 projections 
+# of the covariance matrix
+D <- dist(M)
+hc3 <- hclust(D, method="centroid")
+plot(hc3, hang=-1, cex=0.3)
+
+```
+
+The dimensionality is still quite difficult to visualise, however we will again make an estimate of 20 clusters, for demonstration purposes only.
+
+```{r, webgl=TRUE}
+cuts3 <- cutree(hc3, k=20)
+hist(cuts3, breaks=20)
+plotData <- data.frame(x=Z[,10], y=Z[,20],labels=unique_words[1:length(Z[,2])], cluster=cuts3[1:length(Z[,2])], size=term_freq$count[1:length(Z[,2])])
+#scatterD3(plotData, x=x, y=y, lab=labels, point_opacity=0.2, col_var=cluster, legend_width=0
+#          ,size_var=size)
+
+x <- Z[,10]
+y <- Z[,20]
+z <- Z[,30]
+terms <- unique_words[1:length(Z[,2])]
+# colors for each cluster
+col <- rainbow(20)
+cols <- sapply(plotData$cluster, function (c) col[c])
+scatterplot3js(x,y,z, pch=terms, size=0.5, font.symbols="size:10pt;", axis=TRUE, color=cols, use.orbitcontrols=TRUE)
+
+```
+
 
 Similarly we may be able to review the clusters for documents instead of terms. The document matrix may be more divisible due to the separation based on tags. We plot the document search space and the identifiers for each document.
 
