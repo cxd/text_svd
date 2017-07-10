@@ -327,49 +327,22 @@ The second will investigate the ldfa library provides a kernel discriminant anal
 Lastly since the application tags may not necessarily describe suitable boundaries it is worthwhile experimenting with the clustering partitions that are defined by the clustering algorithm such as kmeans. We can use the cluster as the partition group and determine if a simple LDA can separate between these groups.
 
 ```{r}
-# we need to use reduced dimensions so choosing initially the first 100 components.
-
-X <- dsTrain[,1:nComponents]
-dsTrain$appTag <- droplevels(dsTrain$appTag)
-
-# TODO: work out why the error "some group is too small" occurs
-# is it due to any non-singularity within groups?
-# or is it due to levels in appTag containing 0 population?
-
-model1a <- qda(X, dsTrain$appTag, method="mle")
-
-## save the model for reuse
-saveRDS(model1a, file=paste(outputBase, "model1_qda.RData", sep=""))
-
-test1a <- predict(model1a, dsTest[,1:nComponents])
-
-predictedTags <- test1
-
-gc()
-
-
-```
-
-```{r}
-require(lfda)
+require(glmnet)
 
 # we need to use reduced dimensions so choosing initially the first 100 components.
-n <- 100
+n <- nComponents
+
 X <- dsTrain[,1:n]
-# generate the kernal model, in this case we use a guassian model
-g <- kmatrixGauss(X)
-#
-# generate the model, the modell generates an estimate on the test set at the same time.
-# the first parameter is the gaussian model generated above.
-# the second are the labels for groups
-# the third is the desired number of components to be produced, in our case we are using the same number of components, but we can attempt to evaluate the model in lower dimensions.
-model1b <- klfda(g, dsTrain$appTag, nComponents, metric="plain")
+
+idx <- which(dsTrain$appTag == unique_words)
+
+model1b <- glmnet(x=X, y=as.factor(dsTrain$aappTag), family="multinomial", type.multinomial = "grouped")
 
 
 ## save the model for reuse
-saveRDS(model1b, file=paste(outputBase, "model1_klfda.RData", sep=""))
+saveRDS(model1b, file=paste(outputBase, "model1_glmnet_multinomial.RData", sep=""))
 
-test1a <- predict(model1a, dsTest[,1:nComponents])
+test1b <- predict(model1b, newdata=dsTest[,1:n])
 
 predictedTags <- test1
 
