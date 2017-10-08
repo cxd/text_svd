@@ -76,10 +76,10 @@ Documents are assigned the distance from the query, and then ordered for maximum
  
 ``` 
   docs$cosine_dist <- dist
-  docs <- docs[order(-abs(docs$cosine_dist)),]
+  docs <- docs[order(-docs$cosine_dist),]
 ```
 
-Maybe, using an approach to select terms that correspond with the highest absolute coefficients in V it would be possible to generate a set of queries automatically for a selected top number of components in V (representing the largest variances in the diagonal S), then iteratively running the queries to calculate the proximities of each query per component against each document, the closest cosine distances then are used to label each document resulting in a group of documents clustered to each component. This way documents are labeled with their corresponding component.
+Maybe, using an approach to select terms that correspond with the highest absolute coefficients in V it would be possible to generate a set of queries automatically for a selected top number of components in V (representing the largest variances in the diagonal S), then iteratively running the queries to calculate the proximities of each query per component against each document, the cosine distances (maximum values) then are used to label each document resulting in a group of documents clustered to each component. This way documents are labeled with their corresponding component.
 
 The script "cluster_documents.R" makes some attempt at the above method, and outputs a set of CSV files one of which is called "docs_clustered.csv" that labels documents pertaining to the clusters assigned by this method. 
 

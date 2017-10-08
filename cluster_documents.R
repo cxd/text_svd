@@ -203,7 +203,9 @@ searchResults <- function(search_space, search_term_mat, select_data_cols) {
     search_mat <- search_term_mat[i,]
     sM <- as.matrix(search_mat)
     # search for query1 using the projection of the term matrix into the term document matrix
-    proj <- sM%*%(ssV)
+    # note there is a slight misalignment between the search matrix and the search space, 
+    # adjusted below by subsetting on rows in ssV = cols in (sM)
+    proj <- sM%*%(ssV[1:ncol(sM),])
     # find the closest cosine distance to U
     dist <- unlist(sapply(1:nrow(ssU), function(j) {
       u <- ssU[j,]
@@ -228,8 +230,11 @@ assignMaxResults <- function(docs, search_results) {
   cluster <- list()
   for(i in 1:nrow(search_results)) {
     dist <- unlist(search_results[i,3:ncol(search_results)])
-    # distance must be absolute
-    maxidx <- which(dist == max(abs(dist)))
+    # instead of assigning absolute distance, use only positive distance
+    # since the space is similar to two cones joined on the tips 
+    # the negative distances are in the opposite direction of the search vector
+    # 
+    maxidx <- which(dist == max(dist))
     maxidx <- maxidx[1]
     cluster[[i]] <- maxidx
   }
@@ -246,9 +251,9 @@ ggplot(temp) +
   geom_point(aes(x=dim1, y=dim3, col=as.factor(cluster)), shape=1)
 
 V2 <- t(V)
-temp2 <- data.frame(dim1=V[1,], dim2=V[2,], dim3=V[3,], col=cluster)
+temp2 <- data.frame(dim1=V[1,], dim2=V[2,], dim3=V[3,], dim4=V[4,], col=cluster)
 ggplot(temp2) + 
-  geom_point(aes(x=dim1, y=dim2, col=as.factor(cluster)), shape=1)
+  geom_point(aes(x=dim1, y=dim3, col=as.factor(cluster)), shape=1)
 
 plot(V[1,], V[2,], col=(cluster))
 
